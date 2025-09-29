@@ -1,0 +1,183 @@
+//mount drive
+from google.colab import drive
+drive.mount('/content/drive')
+//load dataset
+!mkdir -p /content/drive/MyDrive/oil_spill_dataset
+!wget -P /content/drive/MyDrive/oil_spill_dataset https://zenodo.org/records/10555314/files/dataset.zip
+//extract 
+zip_path = "/content/drive/MyDrive/oil_spill_dataset/dataset.zip"
+import zipfile
+import os
+import time
+
+# Add a short delay to ensure the file is accessible
+time.sleep(5)
+
+# Check if the file exists before attempting to unzip
+if os.path.exists(zip_path):
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("/content/oil_spill_dataset/dataset")
+        print("Extraction complete.")
+        !ls /content/oil_spill_dataset/dataset
+    except Exception as e:
+        print(f"An error occurred during extraction: {e}")
+else:
+    print(f"Error: File not found at {zip_path}")
+
+import os
+
+zip_path = "/content/drive/MyDrive/oil_spill_dataset/dataset.zip"
+
+# Check if the directory exists
+if os.path.exists(os.path.dirname(zip_path)):
+    print(f"Directory exists: {os.path.dirname(zip_path)}")
+    # List files in the directory
+    print("Files in the directory:")
+    !ls -l /content/drive/MyDrive/oil_spill_dataset/
+    # Check if the file exists and its size
+    if os.path.exists(zip_path):
+        file_size = os.path.getsize(zip_path)
+        print(f"File exists: {zip_path}")
+        print(f"File size: {file_size} bytes")
+    else:
+        print(f"File not found: {zip_path}")
+else:
+    print(f"Directory not found: {os.path.dirname(zip_path)}")
+
+import os, glob
+
+base_dir = "/content/oil_spill_dataset/dataset"
+
+train_imgs = sorted(glob.glob(os.path.join(base_dir, "train/images/*")))
+train_masks = sorted(glob.glob(os.path.join(base_dir, "train/masks/*")))
+
+val_imgs = sorted(glob.glob(os.path.join(base_dir, "val/images/*")))
+val_masks = sorted(glob.glob(os.path.join(base_dir, "val/masks/*")))
+
+test_imgs = sorted(glob.glob(os.path.join(base_dir, "test/images/*")))
+test_masks = sorted(glob.glob(os.path.join(base_dir, "test/masks/*")))
+
+print("Train:", len(train_imgs), "Val:", len(val_imgs), "Test:", len(test_imgs))
+
+//resize 
+import cv2, glob, os
+from tqdm import tqdm
+
+def resize_images_masks(img_paths, mask_paths, out_dir, size=(250,250)):
+    os.makedirs(os.path.join(out_dir,"images"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir,"masks"), exist_ok=True)
+
+    for ipath, mpath in tqdm(zip(img_paths, mask_paths), total=len(img_paths)):
+        img = cv2.imread(ipath)
+        mask = cv2.imread(mpath, cv2.IMREAD_GRAYSCALE)
+
+        img_resized = cv2.resize(img, size, interpolation=cv2.INTER_LINEAR)
+        mask_resized = cv2.resize(mask, size, interpolation=cv2.INTER_NEAREST)
+
+        fname = os.path.basename(ipath)
+        cv2.imwrite(os.path.join(out_dir,"images", fname), img_resized)
+        cv2.imwrite(os.path.join(out_dir,"masks", fname), mask_resized)
+
+# Paths
+base_dir = "/content/oil_spill_dataset/dataset"
+
+train_imgs = sorted(glob.glob(os.path.join(base_dir, "train/images/*")))
+train_masks = sorted(glob.glob(os.path.join(base_dir, "train/masks/*")))
+
+val_imgs = sorted(glob.glob(os.path.join(base_dir, "val/images/*")))
+val_masks = sorted(glob.glob(os.path.join(base_dir, "val/masks/*")))
+
+test_imgs = sorted(glob.glob(os.path.join(base_dir, "test/images/*")))
+test_masks = sorted(glob.glob(os.path.join(base_dir, "test/masks/*")))
+
+# Resize all
+resize_images_masks(train_imgs, train_masks, "/content/resized/train", size=(250,250))
+resize_images_masks(val_imgs, val_masks, "/content/resized/val", size=(250,250))
+resize_images_masks(test_imgs, test_masks, "/content/resized/test", size=(250,250))
+
+//augmentation
+
+import tensorflow as tf
+import glob, os
+def normalize(image, mask):
+    image = tf.cast(image, tf.float32) / 255.0   # [0,1]
+    mask  = tf.cast(mask, tf.float32) / 255.0
+    mask  = tf.where(mask > 0.5, 1.0, 0.0)       # binarize
+    return image, mask
+def augment(image, mask):
+    if tf.random.uniform(()) > 0.5:
+        image = tf.image.flip_left_right(image)
+        mask  = tf.image.flip_left_right(mask)
+
+    if tf.random.uniform(()) > 0.5:
+        image = tf.image.flip_up_down(image)
+        mask  = tf.image.flip_up_down(mask)
+
+    if tf.random.uniform(()) > 0.5:
+        image = tf.image.rot90(image)
+
+    if tf.random.uniform(()) > 0.5:
+        image = tf.image.random_brightness(image, 0.1)
+
+    if tf.random.uniform(()) > 0.5:
+        image = tf.image.random_contrast(image, 0.8, 1.2)
+
+    return image, mask
+def load_dataset(image_dir, mask_dir, augment_data=False, batch_size=8):
+    image_files = sorted(glob.glob(os.path.join(image_dir, "*")))
+    mask_files  = sorted(glob.glob(os.path.join(mask_dir, "*")))
+
+    def parse_image_mask(img_path, mask_path):
+        img = tf.io.read_file(img_path)
+        img = tf.image.decode_png(img, channels=3)
+
+        mask = tf.io.read_file(mask_path)
+        mask = tf.image.decode_png(mask, channels=1)
+
+        img, mask = normalize(img, mask)
+        if augment_data:
+            img, mask = augment(img, mask)
+        return img, mask
+
+    dataset = tf.data.Dataset.from_tensor_slices((image_files, mask_files))
+    dataset = dataset.map(lambda x,y: parse_image_mask(x,y),
+                          num_parallel_calls=tf.data.AUTOTUNE)
+    return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+train_ds = load_dataset(
+    "/content/resized/train/images",
+    "/content/resized/train/masks",
+    augment_data=True,
+    batch_size=8
+)
+
+val_ds = load_dataset(
+    "/content/resized/val/images",
+    "/content/resized/val/masks",
+    augment_data=False,
+    batch_size=8
+)
+
+test_ds = load_dataset(
+    "/content/resized/test/images",
+    "/content/resized/test/masks",
+    augment_data=False,
+    batch_size=8
+)
+
+//example images 
+import matplotlib.pyplot as plt
+
+for imgs, masks in train_ds.take(1):
+    plt.figure(figsize=(10,5))
+    for i in range(3):
+        plt.subplot(2,3,i+1)
+        plt.imshow(imgs[i])
+        plt.title("Image")
+        plt.axis("off")
+
+        plt.subplot(2,3,i+4)
+        plt.imshow(tf.squeeze(masks[i]), cmap="gray")
+        plt.title("Mask")
+        plt.axis("off")
+    plt.show()
