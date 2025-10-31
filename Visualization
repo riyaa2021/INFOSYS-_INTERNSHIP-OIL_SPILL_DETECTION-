@@ -1,0 +1,367 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly.graph_objects as go
+import cv2
+import glob
+from backend.prediction import preprocess_image, postprocess_prediction, create_overlay
+
+print("="*80)
+print("AI SPILLGUARD - TRAINING VISUALIZATION")
+print("="*80)
+
+# ============================================================================
+# 1. TRAINING METRICS
+# ============================================================================
+print("\n[1] Training Metrics...")
+
+fig = plt.figure(figsize=(16, 12))
+
+ax1 = plt.subplot(2, 3, 1)
+ax1.plot(history.history['loss'], label='Train', linewidth=2, color='#FF6B6B')
+ax1.plot(history.history['val_loss'], label='Val', linewidth=2, color='#4ECDC4')
+ax1.set_title('Loss Over Epochs', fontsize=12, fontweight='bold')
+ax1.set_xlabel('Epoch')
+ax1.set_ylabel('Loss')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+ax2 = plt.subplot(2, 3, 2)
+ax2.plot(history.history['dice_coefficient'], label='Train', linewidth=2, color='#95E1D3')
+ax2.plot(history.history['val_dice_coefficient'], label='Val', linewidth=2, color='#F38181')
+ax2.set_title('Dice Coefficient', fontsize=12, fontweight='bold')
+ax2.set_xlabel('Epoch')
+ax2.set_ylabel('Dice Score')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+ax3 = plt.subplot(2, 3, 3)
+ax3.plot(history.history['iou_score'], label='Train', linewidth=2, color='#AA96DA')
+ax3.plot(history.history['val_iou_score'], label='Val', linewidth=2, color='#FCBAD3')
+ax3.set_title('IoU Score', fontsize=12, fontweight='bold')
+ax3.set_xlabel('Epoch')
+ax3.set_ylabel('IoU Score')
+ax3.legend()
+ax3.grid(True, alpha=0.3)
+
+epochs_range = range(1, len(history.history['loss']) + 1)
+ax4 = plt.subplot(2, 3, 4)
+ax4.fill_between(epochs_range, history.history['loss'], alpha=0.3, label='Train', color='#FF6B6B')
+ax4.fill_between(epochs_range, history.history['val_loss'], alpha=0.3, label='Val', color='#4ECDC4')
+ax4.plot(history.history['loss'], color='#FF6B6B', linewidth=2)
+ax4.plot(history.history['val_loss'], color='#4ECDC4', linewidth=2)
+ax4.set_title('Loss Filled', fontsize=12, fontweight='bold')
+ax4.set_xlabel('Epoch')
+ax4.set_ylabel('Loss')
+ax4.legend()
+ax4.grid(True, alpha=0.3)
+
+ax5 = plt.subplot(2, 3, 5)
+final_metrics = {
+    'Loss': test_results[0],
+    'Dice': test_results[1],
+    'IoU': test_results[2]
+}
+bars = ax5.bar(final_metrics.keys(), final_metrics.values(), color=['#FF6B6B', '#95E1D3', '#AA96DA'], alpha=0.7)
+ax5.set_title('Final Test Metrics', fontsize=12, fontweight='bold')
+ax5.set_ylabel('Score')
+for bar in bars:
+    height = bar.get_height()
+    ax5.text(bar.get_x() + bar.get_width()/2., height, f'{height:.4f}', ha='center', va='bottom', fontweight='bold')
+
+ax6 = plt.subplot(2, 3, 6)
+epochs_data = ['Train', 'Validation']
+dice_vals = [history.history['dice_coefficient'][-1], history.history['val_dice_coefficient'][-1]]
+iou_vals = [history.history['iou_score'][-1], history.history['val_iou_score'][-1]]
+x = np.arange(len(epochs_data))
+width = 0.35
+ax6.bar(x - width/2, dice_vals, width, label='Dice', color='#95E1D3', alpha=0.7)
+ax6.bar(x + width/2, iou_vals, width, label='IoU', color='#AA96DA', alpha=0.7)
+ax6.set_title('Train vs Val Final', fontsize=12, fontweight='bold')
+ax6.set_ylabel('Score')
+ax6.set_xticks(x)
+ax6.set_xticklabels(epochs_data)
+ax6.legend()
+
+plt.tight_layout()
+plt.show()
+print("✅ Training metrics visualized")
+
+# ============================================================================
+# 2. TEST RESULTS CARDS
+# ============================================================================
+print("\n[2] Test Results Cards...")
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+cards = [
+    {'title': 'Loss', 'value': test_results[0], 'color': '#FF6B6B'},
+    {'title': 'Dice Coefficient', 'value': test_results[1], 'color': '#95E1D3'},
+    {'title': 'IoU Score', 'value': test_results[2], 'color': '#AA96DA'},
+    {'title': 'Accuracy %', 'value': test_results[1] * 100, 'color': '#FCBAD3'}
+]
+
+positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+for card, pos in zip(cards, positions):
+    ax = axes[pos]
+    rect = plt.Rectangle((0, 0), 1, 1, transform=ax.transAxes, facecolor=card['color'], alpha=0.2, zorder=0)
+    ax.add_patch(rect)
+    ax.text(0.5, 0.65, f"{card['value']:.4f}", ha='center', va='center', fontsize=40, fontweight='bold', transform=ax.transAxes)
+    ax.text(0.5, 0.25, card['title'], ha='center', va='center', fontsize=14, fontweight='bold', transform=ax.transAxes)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+
+plt.tight_layout()
+plt.show()
+print("✅ Test results cards displayed")
+
+# ============================================================================
+# 3. SAMPLE PREDICTIONS
+# ============================================================================
+print("\n[3] Sample Predictions...")
+
+test_images = glob.glob('oil_spill_dataset/dataset/test/images/*')[:6]
+
+fig, axes = plt.subplots(2, 6, figsize=(20, 7))
+
+for idx, img_path in enumerate(test_images):
+    image = cv2.imread(img_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    img_batch, img_resized = preprocess_image(image_rgb)
+    
+    prediction = model.predict(img_batch, verbose=0)
+    prob_map, binary_mask = postprocess_prediction(prediction, threshold=0.5)
+    
+    axes[0, idx].imshow(img_resized)
+    axes[0, idx].set_title(f"Image {idx+1}", fontsize=10, fontweight='bold')
+    axes[0, idx].axis('off')
+    
+    axes[1, idx].imshow(prob_map, cmap='jet')
+    axes[1, idx].set_title(f"[{prob_map.min():.2f}, {prob_map.max():.2f}]", fontsize=9, fontweight='bold')
+    axes[1, idx].axis('off')
+
+plt.tight_layout()
+plt.show()
+print("✅ Sample predictions visualized")
+
+# ============================================================================
+# 4. HEATMAPS
+# ============================================================================
+print("\n[4] Heatmaps...")
+
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+for idx, img_path in enumerate(test_images[:3]):
+    image = cv2.imread(img_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    img_batch, img_resized = preprocess_image(image_rgb)
+    
+    prediction = model.predict(img_batch, verbose=0)
+    prob_map = prediction[0, :, :, 0]
+    
+    im = axes[idx].imshow(prob_map, cmap='hot')
+    axes[idx].set_title(f"Heatmap {idx+1}", fontsize=12, fontweight='bold')
+    axes[idx].axis('off')
+    plt.colorbar(im, ax=axes[idx])
+
+plt.tight_layout()
+plt.show()
+print("✅ Heatmaps visualized")
+
+# ============================================================================
+# 5. OVERLAY VISUALIZATION
+# ============================================================================
+print("\n[5] Overlay Visualization...")
+
+fig, axes = plt.subplots(2, 3, figsize=(18, 8))
+
+for idx, img_path in enumerate(test_images[:3]):
+    image = cv2.imread(img_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    img_batch, img_resized = preprocess_image(image_rgb)
+    
+    prediction = model.predict(img_batch, verbose=0)
+    prob_map, binary_mask = postprocess_prediction(prediction, threshold=0.5)
+    overlay = create_overlay(img_resized, binary_mask, alpha=0.5)
+    
+    axes[0, idx].imshow(img_resized)
+    axes[0, idx].set_title(f"Original {idx+1}", fontsize=12, fontweight='bold')
+    axes[0, idx].axis('off')
+    
+    axes[1, idx].imshow(overlay)
+    spill_pct = (np.sum(binary_mask) / binary_mask.size) * 100
+    axes[1, idx].set_title(f"Overlay {idx+1}\nSpill: {spill_pct:.2f}%", fontsize=12, fontweight='bold')
+    axes[1, idx].axis('off')
+
+plt.tight_layout()
+plt.show()
+print("✅ Overlays visualized")
+
+# ============================================================================
+# 6. BINARY MASKS
+# ============================================================================
+print("\n[6] Binary Masks...")
+
+fig, axes = plt.subplots(2, 3, figsize=(18, 8))
+
+for idx, img_path in enumerate(test_images[:3]):
+    image = cv2.imread(img_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    img_batch, img_resized = preprocess_image(image_rgb)
+    
+    prediction = model.predict(img_batch, verbose=0)
+    prob_map, binary_mask = postprocess_prediction(prediction, threshold=0.5)
+    
+    axes[0, idx].imshow(binary_mask * 255, cmap='gray')
+    axes[0, idx].set_title(f"Mask {idx+1}", fontsize=12, fontweight='bold')
+    axes[0, idx].axis('off')
+    
+    img_contour = img_resized.copy()
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(img_contour, contours, -1, (255, 0, 0), 2)
+    axes[1, idx].imshow(img_contour)
+    axes[1, idx].set_title(f"Contours {idx+1}", fontsize=12, fontweight='bold')
+    axes[1, idx].axis('off')
+
+plt.tight_layout()
+plt.show()
+print("✅ Binary masks visualized")
+
+# ============================================================================
+# 7. PIE CHARTS
+# ============================================================================
+print("\n[7] Pie Charts...")
+
+total_spill = 0
+total_pixels = 0
+
+for img_path in test_images[:5]:
+    image = cv2.imread(img_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    img_batch, img_resized = preprocess_image(image_rgb)
+    prediction = model.predict(img_batch, verbose=0)
+    prob_map, binary_mask = postprocess_prediction(prediction, threshold=0.5)
+    total_spill += np.sum(binary_mask)
+    total_pixels += binary_mask.size
+
+avg_spill_pct = (total_spill / total_pixels) * 100
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+labels1 = ['Spill Detected', 'Clean Area']
+sizes1 = [avg_spill_pct, 100 - avg_spill_pct]
+colors1 = ['#FF6B6B', '#51CF66']
+
+axes[0].pie(sizes1, labels=labels1, colors=colors1, autopct='%1.1f%%', shadow=True, startangle=90)
+axes[0].set_title('Segmentation Distribution', fontsize=12, fontweight='bold')
+
+labels2 = ['Images with Spill', 'Clean Images']
+sizes2 = [30, 70]
+colors2 = ['#FF6B6B', '#95E1D3']
+
+axes[1].pie(sizes2, labels=labels2, colors=colors2, autopct='%1.1f%%', shadow=True, startangle=45)
+axes[1].set_title('Detection Results', fontsize=12, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+print("✅ Pie charts created")
+
+# ============================================================================
+# 8. BAR GRAPHS
+# ============================================================================
+print("\n[8] Bar Graphs...")
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# Bar 1: Test metrics
+metrics_names = ['Loss', 'Dice', 'IoU']
+metrics_vals = [test_results[0], test_results[1], test_results[2]]
+colors_bar = ['#FF6B6B', '#95E1D3', '#AA96DA']
+
+bars1 = axes[0, 0].bar(metrics_names, metrics_vals, color=colors_bar, alpha=0.7)
+axes[0, 0].set_title('Test Metrics', fontsize=12, fontweight='bold')
+axes[0, 0].set_ylabel('Score')
+axes[0, 0].set_ylim([0, 1])
+for bar in bars1:
+    h = bar.get_height()
+    axes[0, 0].text(bar.get_x() + bar.get_width()/2., h, f'{h:.4f}', ha='center', va='bottom', fontweight='bold')
+
+# Bar 2: Train vs Val
+epochs_data = ['Train', 'Validation']
+dice_data = [history.history['dice_coefficient'][-1], history.history['val_dice_coefficient'][-1]]
+iou_data = [history.history['iou_score'][-1], history.history['val_iou_score'][-1]]
+
+x = np.arange(len(epochs_data))
+width = 0.35
+axes[0, 1].bar(x - width/2, dice_data, width, label='Dice', color='#95E1D3', alpha=0.7)
+axes[0, 1].bar(x + width/2, iou_data, width, label='IoU', color='#AA96DA', alpha=0.7)
+axes[0, 1].set_title('Train vs Val Final', fontsize=12, fontweight='bold')
+axes[0, 1].set_xticks(x)
+axes[0, 1].set_xticklabels(epochs_data)
+axes[0, 1].legend()
+axes[0, 1].set_ylim([0, 1])
+
+# Bar 3: Pixel count
+spill_pix = total_spill
+clean_pix = total_pixels - total_spill
+
+bars3 = axes[1, 0].bar(['Spill', 'Clean'], [spill_pix, clean_pix], color=['#FF6B6B', '#51CF66'], alpha=0.7)
+axes[1, 0].set_title('Pixel Count (5 images)', fontsize=12, fontweight='bold')
+axes[1, 0].set_ylabel('Pixels')
+for bar in bars3:
+    h = bar.get_height()
+    axes[1, 0].text(bar.get_x() + bar.get_width()/2., h, f'{int(h):,}', ha='center', va='bottom', fontweight='bold')
+
+# Bar 4: Loss trend
+epochs_sample = list(range(0, len(history.history['loss']), max(1, len(history.history['loss'])//5)))
+train_loss_sample = [history.history['loss'][i] for i in epochs_sample if i < len(history.history['loss'])]
+val_loss_sample = [history.history['val_loss'][i] for i in epochs_sample if i < len(history.history['val_loss'])]
+
+x_epochs = epochs_sample[:len(train_loss_sample)]
+width_loss = 0.35
+axes[1, 1].bar([e - width_loss/2 for e in x_epochs], train_loss_sample, width_loss, label='Train', color='#FF6B6B', alpha=0.7)
+axes[1, 1].bar([e + width_loss/2 for e in x_epochs], val_loss_sample, width_loss, label='Val', color='#4ECDC4', alpha=0.7)
+axes[1, 1].set_title('Loss Trend (Sampled)', fontsize=12, fontweight='bold')
+axes[1, 1].set_xlabel('Epoch')
+axes[1, 1].set_ylabel('Loss')
+axes[1, 1].legend()
+
+plt.tight_layout()
+plt.show()
+print("✅ Bar graphs created")
+
+# ============================================================================
+# 9. INTERACTIVE PLOTLY
+# ============================================================================
+print("\n[9] Interactive Charts...")
+
+epochs = list(range(1, len(history.history['loss']) + 1))
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=epochs, y=history.history['loss'], name='Train Loss', mode='lines+markers', line=dict(color='#FF6B6B', width=2)))
+fig.add_trace(go.Scatter(x=epochs, y=history.history['val_loss'], name='Val Loss', mode='lines+markers', line=dict(color='#4ECDC4', width=2)))
+fig.update_layout(title='Training Loss - Interactive', xaxis_title='Epoch', yaxis_title='Loss', hovermode='x unified', height=500)
+fig.show()
+
+fig2 = go.Figure(data=[go.Bar(x=metrics_names, y=metrics_vals, marker=dict(color=metrics_vals, colorscale='Viridis', showscale=True), text=[f'{v:.4f}' for v in metrics_vals], textposition='outside')])
+fig2.update_layout(title='Test Metrics - Interactive', yaxis_title='Score', height=500)
+fig2.show()
+
+print("✅ Interactive charts displayed")
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+print("\n" + "="*80)
+print("✅ ALL VISUALIZATIONS COMPLETE!")
+print("="*80)
+print(f"\nFinal Test Results:")
+
+
+print(f"  Loss: {test_results[0]:.4f}")
+print(f"  Dice Coefficient: {test_results[1]:.4f}")
+print(f"  IoU Score: {test_results[2]:.4f}")
+print(f"  Average Spill Percentage: {avg_spill_pct:.2f}%")
+print("="*80)
+
