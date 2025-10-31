@@ -1,0 +1,279 @@
+🌊 AI SpillGuard - Oil Spill Detection System
+An AI-powered deep learning model for detecting and segmenting oil spills in satellite imagery using EfficientNetB0-UNet architecture.
+
+Features
+🎯 Real-time oil spill detection in satellite images
+
+📊 Pixel-level segmentation masks
+
+🔴 Red overlay visualization of spills
+
+📈 Automatic risk level classification (Clean/Minimal/Warning/Critical)
+
+💾 SQLite database for detection history
+
+📥 Download segmentation masks and reports as CSV
+
+🌐 Web interface built with Streamlit
+
+📊 Interactive analytics dashboard
+
+Model Architecture
+EfficientNetB0-UNet with:
+
+Input: 256×256×3 RGB images
+
+Output: 256×256×1 binary segmentation mask
+
+Total Parameters: 4.2M
+
+Loss: Binary Crossentropy
+
+Metrics: Dice Coefficient, IoU Score
+
+Dataset
+Training: 811 images
+
+Validation: 203 images
+
+Testing: 254 images
+
+Total: 1,268 satellite images with manual annotations
+
+Performance
+Metric	Score
+Test Loss	0.1523
+Dice Coefficient	0.8645
+IoU Score	0.7823
+Accuracy	89.5%
+Quick Start
+Installation
+bash
+pip install -r requirements.txt
+Run Streamlit App
+bash
+streamlit run app.py
+Then open: http://localhost:8501
+
+On Google Colab
+python
+!pip install -q streamlit pyngrok plotly pandas opencv-python
+
+from pyngrok import ngrok
+ngrok.set_auth_token("YOUR_TOKEN")
+
+import subprocess
+subprocess.Popen(["streamlit", "run", "app.py", "--server.port=8501", "--server.headless=true"])
+public_url = ngrok.connect(8501)
+print(f"Access: {public_url}")
+Project Structure
+text
+AI-SpillGuard/
+├── app.py                          # Main Streamlit app
+├── backend/
+│   ├── database.py                # SQLite operations
+│   ├── prediction.py              # Prediction pipeline
+│   ├── model_loader.py            # Model loading
+│   └── __init__.py
+├── AI_SpillGuard_v1_final_CORRECTED.keras  # Trained model
+├── requirements.txt
+└── README.md
+Backend Modules
+Prediction Pipeline
+python
+from backend.prediction import preprocess_image, postprocess_prediction, create_overlay
+
+# Load and preprocess image
+img_batch, img_resized = preprocess_image(image_rgb)
+
+# Get prediction
+prediction = model.predict(img_batch)
+
+# Extract mask
+prob_map, binary_mask = postprocess_prediction(prediction, threshold=0.5)
+
+# Create visualization
+overlay = create_overlay(img_resized, binary_mask, alpha=0.5)
+Database Operations
+python
+from backend.database import SpillGuardDB
+
+db = SpillGuardDB()
+db.insert_detection(filename, result, spill_percentage)
+records = db.get_all_detections()
+App Features
+🏠 Detection Page
+Upload satellite images
+
+Real-time oil spill detection
+
+View segmentation masks
+
+See probability heatmaps
+
+Download results
+
+📊 History Page
+View all past detections
+
+Statistics and metrics
+
+Filter by date
+
+Export detection history as CSV
+
+📈 Analytics Page
+Model performance metrics
+
+Heatmap visualization
+
+Segmentation statistics
+
+Probability distribution
+
+🧠 Model Page
+Model architecture details
+
+Layer information
+
+Parameter count
+
+Training configuration
+
+Risk Levels
+✅ Clean (< 1%): No oil spill detected
+
+ℹ️ Minimal (1-5%): Small spill - Monitor area
+
+⚠️ Warning (5-15%): Moderate spill detected
+
+🚨 Critical (> 15%): Severe spill - Immediate action needed
+
+Training
+The model was trained for 30 epochs with:
+
+Optimizer: Adam (lr=1e-3)
+
+Loss: Binary Crossentropy
+
+Batch Size: 8
+
+Training Time: ~40 minutes (GPU)
+
+Deployment Options
+Local
+bash
+streamlit run app.py
+Docker
+bash
+docker build -t spillguard .
+docker run -p 8501:8501 spillguard
+Streamlit Cloud
+Push to GitHub and deploy at https://streamlit.io/cloud
+
+Colab (Free GPU)
+Use ngrok tunnel for public access
+
+Requirements
+text
+tensorflow==2.13.0
+streamlit==1.28.1
+plotly==5.17.0
+pandas==2.0.3
+numpy==1.24.3
+opencv-python==4.8.0.76
+matplotlib==3.7.2
+seaborn==0.12.2
+scikit-learn==1.3.0
+Pillow==10.0.0
+pyngrok==5.2.0
+Usage Example
+python
+import cv2
+from backend.model_loader import load_spillguard_model
+from backend.prediction import preprocess_image, postprocess_prediction, calculate_spill_percentage, determine_risk_level
+
+# Load model
+model, loaded = load_spillguard_model('AI_SpillGuard_v1_final_CORRECTED.keras')
+
+# Read image
+image = cv2.imread('satellite_image.jpg')
+image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+# Preprocess
+img_batch, img_resized = preprocess_image(image_rgb)
+
+# Predict
+prediction = model.predict(img_batch)
+prob_map, binary_mask = postprocess_prediction(prediction, threshold=0.5)
+
+# Get results
+spill_pct = calculate_spill_percentage(binary_mask)
+risk_msg, risk_level = determine_risk_level(spill_pct)
+
+print(f"Spill: {spill_pct:.2f}%")
+print(f"Risk: {risk_msg}")
+Visualization
+After training, run visualization to generate:
+
+Training metrics (Loss, Dice, IoU)
+
+Sample predictions
+
+Probability heatmaps
+
+Overlay visualizations
+
+Binary masks with contours
+
+Pie charts (segmentation distribution)
+
+Bar graphs (metrics comparison)
+
+Interactive Plotly charts
+
+Technology Stack
+Deep Learning: TensorFlow / Keras
+
+Web Framework: Streamlit
+
+Computer Vision: OpenCV
+
+Data Processing: NumPy, Pandas
+
+Visualization: Matplotlib, Plotly, Seaborn
+
+Database: SQLite
+
+Deployment: Docker, Streamlit Cloud, Google Colab
+
+Key Metrics
+Input Size: 256×256 pixels
+
+Model Size: ~16 MB
+
+Inference Time: ~200-300ms per image
+
+Accuracy: 89.5% on test set
+
+False Positive Rate: 8.5%
+
+False Negative Rate: 5.2%
+
+Troubleshooting
+Model not loading?
+
+Check if AI_SpillGuard_v1_final_CORRECTED.keras exists in root directory
+
+Out of memory?
+
+Use CPU: CUDA_VISIBLE_DEVICES=""
+
+Reduce batch size
+
+Port already in use?
+
+streamlit run app.py --server.port 8502
+
+Author
+Riya Ahirwar
